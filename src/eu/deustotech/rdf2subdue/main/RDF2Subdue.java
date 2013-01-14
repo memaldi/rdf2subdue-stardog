@@ -7,8 +7,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -21,8 +23,38 @@ import com.clarkparsia.stardog.api.Connection;
 import com.clarkparsia.stardog.api.ConnectionConfiguration;
 import com.clarkparsia.stardog.api.Query;
 
-public class RDF2Subdue {
+class Tuple {
+	
+	private String x;
+	private String y;
+	
+	public Tuple(String x, String y) {
+		this.x = x;
+		this.y = y;
+	}
 
+	public String getX() {
+		return x;
+	}
+
+	public void setX(String x) {
+		this.x = x;
+	}
+
+	public String getY() {
+		return y;
+	}
+
+	public void setY(String y) {
+		this.y = y;
+	}
+	
+	
+	
+}
+
+public class RDF2Subdue {
+	
 	public static void main(String args[]) {
 		try {
 			
@@ -45,6 +77,7 @@ public class RDF2Subdue {
 			String user = configFile.getProperty("STARDOG_USER");
 			String password = configFile.getProperty("STARDOG_PASS");
 			String outputFile = configFile.getProperty("GRAPH_FILE");
+			int vertexLimit = Integer.parseInt(configFile.getProperty("VERTEX_LIMIT"));
 			
 			System.out.println((String.format("[%s] Connecting to Stardog with URL %s and DB %s...", sdf.format(System.currentTimeMillis()), server, db)));
 			Connection aConn = ConnectionConfiguration.to(db).url(server).credentials(user, password).connect();
@@ -54,84 +87,94 @@ public class RDF2Subdue {
 			Set<String> subjects = new HashSet<String>();
 			Query aQuery = aConn.query("SELECT DISTINCT ?s WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?o }");
 			TupleQueryResult aResult = aQuery.executeSelect();
-
-			while (aResult.hasNext()) {
-				BindingSet set = aResult.next();
-				subjects.add(set.getBinding("s").getValue().toString());
-			}
-			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjects.size()));
-
-			//Retrieving objects
-			System.out.println(String.format("[%s] Retrieving objects", sdf.format(System.currentTimeMillis())));
-			Set<String> objects = new HashSet<String>();
-			aQuery = aConn.query("SELECT DISTINCT ?o WHERE { ?s ?p ?o }");
-			aResult = aQuery.executeSelect();
 			
 			while (aResult.hasNext()) {
 				BindingSet set = aResult.next();
-				objects.add(set.getBinding("o").getValue().toString());
+				String subjectString = set.getBinding("s").getValue().toString();
+				subjects.add(subjectString);
 			}
 			aResult.close();
-			System.out.println(String.format("[%s] %s Objects found!", sdf.format(System.currentTimeMillis()), objects.size()));
-			objects.removeAll(subjects);
-			System.out.println(String.format("[%s] After filtering, %s distinct objects found!", sdf.format(System.currentTimeMillis()), objects.size()));
+			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjects.size()));
 			
 			System.out.println(String.format("[%s] Generating and writing nodes to output file...", sdf.format(System.currentTimeMillis())));
+			
 			List<String> nodes = new ArrayList<String>();
-			FileWriter out = new FileWriter(outputFile);
-			//BufferedWriter out = new BufferedWriter(fstream);
-			int i = 1;
+			Map<Integer,Set<String>> edges = new HashMap<Integer,Set<String>>();
+						
 			for (String subject : subjects) {
-				aQuery = aConn.query(String.format("SELECT ?o WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?o } LIMIT 1", subject));
-				aResult = aQuery.executeSelect();
-				String type = "Unknown";
-				while (aResult.hasNext()) {
-					BindingSet set = aResult.next();
-					type = set.getBinding("o").getValue().toString();
-					break;
-				}
-				out.write(String.format("v %s \"%s\"\n", i, type));
-				nodes.add(subject);
-				i++;
-				aResult.close();
-			}
-			out.flush();
-			String[] schemes = {"http", "https"};
-			UrlValidator urlValidator = new UrlValidator(schemes);
-			String type = "Unknown";
-			
-			for (String object : objects) {
-				if (urlValidator.isValid(object)) {
-					type = "URL";
-				} else {
-					type = "Literal";
-				}
-				
-				out.write(String.format("v %s \"%s\"\n", i, type));
-				nodes.add(object);
-				i++;
-			}
-			out.flush();
-			
-			System.out.println(String.format("[%s] Generating and writing edges to output file...", sdf.format(System.currentTimeMillis())));
-			for (String subject: subjects) {
-				int origin = nodes.indexOf(subject) + 1;
-				aQuery = aConn.query(String.format("SELECT ?p ?o WHERE { <%s> ?p ?o }", subject));
-				aResult = aQuery.executeSelect();
-				while (aResult.hasNext()) {
-					BindingSet set = aResult.next();
-					int destination;
-					if (!set.getBinding("p").getValue().toString().equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {
-						destination = nodes.indexOf(set.getBinding("o").getValue().toString()) + 1;
-						out.write(String.format("e %s %s \"%s\"\n", origin, destination, set.getBinding("p").getValue().toString()));
+				Query objectQuery = aConn.query(String.format("SELECT ?o ?p WHERE { <%s> ?p ?o }", subject));
+				TupleQueryResult objectResult = objectQuery.executeSelect();
+				Set<String> tempEdgeSet = new HashSet<String>();
+				Set<Tuple> objectSet = new HashSet<Tuple>();
+				while(objectResult.hasNext()) {
+					BindingSet set = objectResult.next();
+					String objectString = set.getBinding("o").getValue().toString();
+					String propertyString = set.getBinding("p").getValue().toString();
+					if (!propertyString.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {				
+						nodes.add(objectString);
+						objectSet.add(new Tuple(objectString, propertyString));
 					}
 				}
-				aResult.close();
+							
+				nodes.add(subject);	
+				
+				int subjectNum = nodes.indexOf(subject) + 1;
+				
+				for (Tuple tuple : objectSet) {
+					int objectNum = nodes.indexOf(tuple.getX()) + 1;
+					tempEdgeSet.add(String.format("e %s %s %s\n", subjectNum, objectNum, tuple.getY()));
+				}
+				
+				objectResult.close();
+				edges.put(subjectNum, tempEdgeSet);
 			}
+
 			
+			/*int offset = 0;
+			int i = 1;
+			String[] schemes = {"http", "https"};
+			UrlValidator urlValidator = new UrlValidator(schemes);
+			//TODO: Paralelizar
+			while (offset < nodes.size()) {
+				FileWriter out = new FileWriter(String.format("%s_%s.g", outputFile, i));
+				int limit = (i * vertexLimit);
+				if (limit > nodes.size()) {
+					limit = nodes.size();
+				}
+				List<String> nodeSubList = nodes.subList(offset, limit);
+				for (String node : nodeSubList) {
+					String nodeType = null;
+					if (urlValidator.isValid(node)) {
+						Query classQuery = aConn.query(String.format("SELECT ?o WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?o } LIMIT 1", node));
+						TupleQueryResult classResult = classQuery.executeSelect();			
+						while (classResult.hasNext()) {
+							BindingSet classSet = classResult.next();
+							nodeType = classSet.getBinding("o").getValue().toString();
+						}
+						classResult.close();
+						if (nodeType == null) {
+								nodeType = "URL";
+						}
+					} else {
+						nodeType = "Literal";
+					}
+					
+					out.write(String.format("v %s %s\n", nodes.indexOf(node) + 1, nodeType));
+					
+				}
+				for (String node : nodeSubList) {
+					Set<String> edgeSet = edges.get(nodes.indexOf(node) + 1);
+					if (edgeSet != null) {
+						for (String edge : edgeSet) {
+							out.write(edge);
+						}
+					}
+				}
+				out.close();
+				offset += vertexLimit;
+				i++;
+			}*/
 			
-			out.close();
-			aConn.close();
 			System.out.println(String.format("[%s] Finished!", sdf.format(System.currentTimeMillis())));
 		} catch (StardogException e) {
 			// TODO Auto-generated catch block
@@ -142,7 +185,7 @@ public class RDF2Subdue {
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-		}
+		} 
 		
 	}
 	
