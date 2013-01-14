@@ -23,36 +23,6 @@ import com.clarkparsia.stardog.api.Connection;
 import com.clarkparsia.stardog.api.ConnectionConfiguration;
 import com.clarkparsia.stardog.api.Query;
 
-class Tuple {
-	
-	private String x;
-	private String y;
-	
-	public Tuple(String x, String y) {
-		this.x = x;
-		this.y = y;
-	}
-
-	public String getX() {
-		return x;
-	}
-
-	public void setX(String x) {
-		this.x = x;
-	}
-
-	public String getY() {
-		return y;
-	}
-
-	public void setY(String y) {
-		this.y = y;
-	}
-	
-	
-	
-}
-
 public class RDF2Subdue {
 	
 	public static void main(String args[]) {
@@ -98,91 +68,75 @@ public class RDF2Subdue {
 			
 			System.out.println(String.format("[%s] Generating and writing nodes to output file...", sdf.format(System.currentTimeMillis())));
 			
-			List<String> nodes = new ArrayList<String>();
-			Map<Integer,Set<String>> edges = new HashMap<Integer,Set<String>>();
-						
-			for (String subject : subjects) {
-				Query objectQuery = aConn.query(String.format("SELECT ?o ?p WHERE { <%s> ?p ?o }", subject));
-				TupleQueryResult objectResult = objectQuery.executeSelect();
-				Set<String> tempEdgeSet = new HashSet<String>();
-				Set<Tuple> objectSet = new HashSet<Tuple>();
-				while(objectResult.hasNext()) {
-					BindingSet set = objectResult.next();
-					String objectString = set.getBinding("o").getValue().toString();
-					String propertyString = set.getBinding("p").getValue().toString();
-					if (!propertyString.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {				
-						nodes.add(objectString);
-						objectSet.add(new Tuple(objectString, propertyString));
-					}
-				}
-							
-				nodes.add(subject);	
-				
-				int subjectNum = nodes.indexOf(subject) + 1;
-				
-				for (Tuple tuple : objectSet) {
-					int objectNum = nodes.indexOf(tuple.getX()) + 1;
-					tempEdgeSet.add(String.format("e %s %s %s\n", subjectNum, objectNum, tuple.getY()));
-				}
-				
-				objectResult.close();
-				edges.put(subjectNum, tempEdgeSet);
-			}
-
-			
-			/*int offset = 0;
-			int i = 1;
 			String[] schemes = {"http", "https"};
 			UrlValidator urlValidator = new UrlValidator(schemes);
-			//TODO: Paralelizar
-			while (offset < nodes.size()) {
-				FileWriter out = new FileWriter(String.format("%s_%s.g", outputFile, i));
-				int limit = (i * vertexLimit);
-				if (limit > nodes.size()) {
-					limit = nodes.size();
+			
+			Map<String, Vertex> vertexMap = new HashMap<String, Vertex>();
+			
+			int vertexCount = 1;
+			for (String subject : subjects) {
+				Vertex subjectVertex = null;
+				if (vertexMap.containsKey(subject)) {
+					subjectVertex = vertexMap.get(subject);
+				} else {
+					aQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", subject));
+					aResult = aQuery.executeSelect();
+					String subjectClass =  null;
+					while (aResult.hasNext()) {
+						BindingSet set = aResult.next();
+						subjectClass = set.getBinding("class").getValue().stringValue();
+					}
+					aResult.close();
+					subjectVertex = new Vertex(vertexCount, subjectClass);
+					vertexMap.put(subject, subjectVertex);
+					vertexCount++;
 				}
-				List<String> nodeSubList = nodes.subList(offset, limit);
-				for (String node : nodeSubList) {
-					String nodeType = null;
-					if (urlValidator.isValid(node)) {
-						Query classQuery = aConn.query(String.format("SELECT ?o WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?o } LIMIT 1", node));
-						TupleQueryResult classResult = classQuery.executeSelect();			
-						while (classResult.hasNext()) {
-							BindingSet classSet = classResult.next();
-							nodeType = classSet.getBinding("o").getValue().toString();
-						}
-						classResult.close();
-						if (nodeType == null) {
-								nodeType = "URL";
+				aQuery = aConn.query(String.format("SELECT ?p ?o  WHERE { <%s> ?p ?o }", subject));
+				aResult = aQuery.executeSelect();
+				while (aResult.hasNext()) {
+					Vertex objectVertex = null;
+					BindingSet set = aResult.next();
+					String predicate = set.getBinding("p").getValue().stringValue();
+					String object = set.getBinding("o").getValue().stringValue();
+					if (!vertexMap.containsKey(object)) {
+						if (!predicate.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {
+							if (!urlValidator.isValid(object)) {
+								objectVertex = new Vertex(vertexCount, "Literal");
+								vertexMap.put(object, objectVertex);
+								vertexCount++;
+								subjectVertex.addVertex(objectVertex);
+							} else {
+								String objectClass = null;
+								Query classQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", object));
+								TupleQueryResult classResult = classQuery.executeSelect();
+								while (classResult.hasNext()) {
+									BindingSet classSet = classResult.next();
+									objectClass = classSet.getBinding("class").getValue().toString();
+								}
+								classResult.close();
+								if (objectClass == null) {
+									objectClass = "URI";
+								}
+								objectVertex = new Vertex(vertexCount, objectClass);
+								vertexMap.put(object, objectVertex);
+								vertexCount++;
+								subjectVertex.addVertex(objectVertex);
+							}
 						}
 					} else {
-						nodeType = "Literal";
+						objectVertex = vertexMap.get(object);
+						subjectVertex.addVertex(objectVertex);
 					}
 					
-					out.write(String.format("v %s %s\n", nodes.indexOf(node) + 1, nodeType));
-					
 				}
-				for (String node : nodeSubList) {
-					Set<String> edgeSet = edges.get(nodes.indexOf(node) + 1);
-					if (edgeSet != null) {
-						for (String edge : edgeSet) {
-							out.write(edge);
-						}
-					}
-				}
-				out.close();
-				offset += vertexLimit;
-				i++;
-			}*/
+				aResult.close();
+			}
 			
 			System.out.println(String.format("[%s] Finished!", sdf.format(System.currentTimeMillis())));
 		} catch (StardogException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (QueryEvaluationException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} 
