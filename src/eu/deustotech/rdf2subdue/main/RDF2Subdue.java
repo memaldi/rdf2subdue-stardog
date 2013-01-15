@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -54,83 +55,78 @@ public class RDF2Subdue {
 			
 			System.out.println(String.format("[%s] Connected!", sdf.format(System.currentTimeMillis())));
 			System.out.println(String.format("[%s] Retrieving subjects...", sdf.format(System.currentTimeMillis())));
-			Set<String> subjects = new HashSet<String>();
 			Query aQuery = aConn.query("SELECT DISTINCT ?s WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?o }");
 			TupleQueryResult aResult = aQuery.executeSelect();
 			
+			Map<Integer, Vertex> subjectsById = new HashMap<Integer, Vertex>();
+			Map<String, Vertex> subjectsByURI = new HashMap<String, Vertex>();
+			int id = 1;
 			while (aResult.hasNext()) {
 				BindingSet set = aResult.next();
 				String subjectString = set.getBinding("s").getValue().toString();
-				subjects.add(subjectString);
+				Query classQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", subjectString));
+				TupleQueryResult classResult = classQuery.executeSelect();
+				String subjectClass = null;
+				while (classResult.hasNext()) {
+					BindingSet classSet = classResult.next();
+					subjectClass = classSet.getBinding("class").getValue().stringValue();
+				}
+				classResult.close();
+				Vertex vertex = new Vertex(id, subjectClass, subjectString);
+				subjectsById.put(id, vertex);
+				subjectsByURI.put(subjectString, vertex);
+				id++;
 			}
 			aResult.close();
-			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjects.size()));
+			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjectsById.size()));
 			
 			System.out.println(String.format("[%s] Generating and writing nodes to output file...", sdf.format(System.currentTimeMillis())));
 			
 			String[] schemes = {"http", "https"};
 			UrlValidator urlValidator = new UrlValidator(schemes);
 			
-			Map<String, Vertex> vertexMap = new HashMap<String, Vertex>();
+			Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
+			Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
 			
-			int vertexCount = 1;
-			for (String subject : subjects) {
-				Vertex subjectVertex = null;
-				if (vertexMap.containsKey(subject)) {
-					subjectVertex = vertexMap.get(subject);
-				} else {
-					aQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", subject));
-					aResult = aQuery.executeSelect();
-					String subjectClass =  null;
-					while (aResult.hasNext()) {
-						BindingSet set = aResult.next();
-						subjectClass = set.getBinding("class").getValue().stringValue();
-					}
-					aResult.close();
-					subjectVertex = new Vertex(vertexCount, subjectClass);
-					vertexMap.put(subject, subjectVertex);
-					vertexCount++;
-				}
-				aQuery = aConn.query(String.format("SELECT ?p ?o  WHERE { <%s> ?p ?o }", subject));
-				aResult = aQuery.executeSelect();
-				while (aResult.hasNext()) {
+			for (int i = 1; i <= subjectsById.size(); i++) {
+				Vertex subjectVertex = subjectsById.get(i);
+				Query objectQuery = aConn.query(String.format("SELECT DISTINCT ?o WHERE { <%s> ?p ?o }", subjectVertex.getUri()));
+				TupleQueryResult objectResult = objectQuery.executeSelect();
+				while (objectResult.hasNext()) {
+					BindingSet objectSet = objectResult.next();
+					String object = objectSet.getBinding("o").getValue().stringValue();
 					Vertex objectVertex = null;
-					BindingSet set = aResult.next();
-					String predicate = set.getBinding("p").getValue().stringValue();
-					String object = set.getBinding("o").getValue().stringValue();
-					if (!vertexMap.containsKey(object)) {
-						if (!predicate.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {
+					if (!subjectsByURI.containsKey(object)) {
+						if (!objectsByURI.containsKey(object)) {
+							String label =  null;
+							
 							if (!urlValidator.isValid(object)) {
-								objectVertex = new Vertex(vertexCount, "Literal");
-								vertexMap.put(object, objectVertex);
-								vertexCount++;
-								subjectVertex.addVertex(objectVertex);
+								label = "Literal";
 							} else {
-								String objectClass = null;
-								Query classQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", object));
-								TupleQueryResult classResult = classQuery.executeSelect();
-								while (classResult.hasNext()) {
-									BindingSet classSet = classResult.next();
-									objectClass = classSet.getBinding("class").getValue().toString();
-								}
-								classResult.close();
-								if (objectClass == null) {
-									objectClass = "URI";
-								}
-								objectVertex = new Vertex(vertexCount, objectClass);
-								vertexMap.put(object, objectVertex);
-								vertexCount++;
-								subjectVertex.addVertex(objectVertex);
+								label = "URI";
 							}
+							
+							objectVertex = new Vertex(id, label, object);
+							objectsByURI.put(object, objectVertex);
+							objectsById.put(id, objectVertex);
+							id++;
+							
+						} else {
+							objectVertex = objectsByURI.get(object);
 						}
 					} else {
-						objectVertex = vertexMap.get(object);
-						subjectVertex.addVertex(objectVertex);
+						objectVertex = subjectsByURI.get(object);
 					}
 					
+					subjectVertex.addVertex(objectVertex);
+					
 				}
-				aResult.close();
+				objectResult.close();
+				subjectsById.put(subjectVertex.getId(), subjectVertex);
 			}
+				
+			System.out.println(subjectsById.size());
+			System.out.println(objectsById.size());			
 			
 			System.out.println(String.format("[%s] Finished!", sdf.format(System.currentTimeMillis())));
 		} catch (StardogException e) {
