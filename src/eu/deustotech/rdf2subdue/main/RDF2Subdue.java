@@ -80,7 +80,7 @@ public class RDF2Subdue {
 			aResult.close();
 			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjectsById.size()));
 			
-			System.out.println(String.format("[%s] Generating and writing nodes to output file...", sdf.format(System.currentTimeMillis())));
+			System.out.println(String.format("[%s] Generating nodes and edges...", sdf.format(System.currentTimeMillis())));
 			
 			String[] schemes = {"http", "https"};
 			UrlValidator urlValidator = new UrlValidator(schemes);
@@ -90,49 +90,123 @@ public class RDF2Subdue {
 			
 			for (int i = 1; i <= subjectsById.size(); i++) {
 				Vertex subjectVertex = subjectsById.get(i);
-				Query objectQuery = aConn.query(String.format("SELECT DISTINCT ?o WHERE { <%s> ?p ?o }", subjectVertex.getUri()));
+				Query objectQuery = aConn.query(String.format("SELECT ?o ?p WHERE { <%s> ?p ?o }", subjectVertex.getUri()));
 				TupleQueryResult objectResult = objectQuery.executeSelect();
 				while (objectResult.hasNext()) {
 					BindingSet objectSet = objectResult.next();
 					String object = objectSet.getBinding("o").getValue().stringValue();
+					String property = objectSet.getBinding("p").getValue().stringValue();
 					Vertex objectVertex = null;
-					if (!subjectsByURI.containsKey(object)) {
-						if (!objectsByURI.containsKey(object)) {
-							String label =  null;
-							
-							if (!urlValidator.isValid(object)) {
-								label = "Literal";
+					if (!property.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {
+						if (!subjectsByURI.containsKey(object)) {
+							if (!objectsByURI.containsKey(object)) {
+								String label =  null;
+								
+								if (!urlValidator.isValid(object)) {
+									label = "Literal";
+								} else {
+									label = "URI";
+								}
+								
+								objectVertex = new Vertex(id, label, object);
+								objectVertex.setProperty(property);
+								objectsByURI.put(object, objectVertex);
+								objectsById.put(id, objectVertex);
+								id++;
+								
 							} else {
-								label = "URI";
+								objectVertex = objectsByURI.get(object);
+								objectVertex.setProperty(property);
 							}
-							
-							objectVertex = new Vertex(id, label, object);
-							objectsByURI.put(object, objectVertex);
-							objectsById.put(id, objectVertex);
-							id++;
-							
 						} else {
-							objectVertex = objectsByURI.get(object);
+							objectVertex = subjectsByURI.get(object);
+							objectVertex.setProperty(property);
 						}
-					} else {
-						objectVertex = subjectsByURI.get(object);
+						
+						subjectVertex.addVertex(objectVertex);
 					}
-					
-					subjectVertex.addVertex(objectVertex);
-					
 				}
 				objectResult.close();
 				subjectsById.put(subjectVertex.getId(), subjectVertex);
 			}
-				
-			System.out.println(subjectsById.size());
-			System.out.println(objectsById.size());			
+							
+			int offset = 0;
 			
+			Map<Integer, List<Vertex>> nodeMap = new HashMap<Integer, List<Vertex>>();
+			Map<Integer, Set<String>> edgeMap = new HashMap<Integer, Set<String>>();
+			
+ 			for (int key : subjectsById.keySet()) { 
+				Vertex subjectVertex = subjectsById.get(key);
+				int nodeFile = (subjectVertex.getId() / vertexLimit) + 1;
+				if (!nodeMap.containsKey(nodeFile)) {
+					nodeMap.put(nodeFile, new ArrayList<Vertex>());
+				}
+				
+				List<Vertex> nodeList = nodeMap.get(nodeFile);
+				//nodeList.add(String.format("v %s %s\n", subjectVertex.getId(), subjectVertex.getLabel()));
+				nodeList.add(subjectVertex);
+				nodeMap.put(nodeFile, nodeList);
+				
+				Set<Vertex> relatedVertex = subjectVertex.getVertex();
+				
+				for (Vertex vertex : relatedVertex) {
+					int edgeFile;
+					if (vertex.getId() > subjectVertex.getId()) {
+						edgeFile = (vertex.getId() / vertexLimit) + 1;
+					} else {
+						edgeFile = (subjectVertex.getId() / vertexLimit) + 1;
+					}
+					
+					if (!edgeMap.containsKey(edgeFile)) {
+						edgeMap.put(edgeFile, new HashSet<String>());
+					}
+					
+					Set<String> edgeList = edgeMap.get(edgeFile);
+					edgeList.add(String.format("e %s %s %s\n", subjectVertex.getId(), vertex.getId(), vertex.getProperty()));
+					edgeMap.put(edgeFile, edgeList);
+				}
+			}
+ 			
+ 			for (int key : objectsById.keySet()) {
+ 				Vertex objectVertex = objectsById.get(key);
+ 				int nodeFile = (objectVertex.getId() / vertexLimit) + 1;
+ 				if (!nodeMap.containsKey(nodeFile)) {
+ 					nodeMap.put(nodeFile, new ArrayList<Vertex>());
+ 				}
+ 				
+ 				List<Vertex> nodeList = nodeMap.get(nodeFile);
+ 				//nodeList.add(String.format("v %s %s\n", objectVertex.getId(), objectVertex.getLabel()));
+ 				nodeList.add(objectVertex);
+ 				nodeMap.put(nodeFile, nodeList);
+ 			}
+ 			
+ 			System.out.println(String.format("[%s] Writing nodes and edges to output file(s)...", sdf.format(System.currentTimeMillis())));
+			
+ 			
+ 			for (int key : nodeMap.keySet()) {
+ 				FileWriter out = new FileWriter(String.format("%s_%s.g", outputFile, key));
+ 				List<Vertex> nodeList = nodeMap.get(key);
+ 				Collections.sort(nodeList);
+ 				for (Vertex vertex : nodeList) {
+ 					out.write(String.format("v %s %s\n", vertex.getId(), vertex.getLabel()));
+ 				}
+ 				out.write("%\n");
+ 				Set<String> edgeList = edgeMap.get(key);
+ 				for (String edge : edgeList) {
+ 					out.write(edge);
+ 				}
+ 				out.close();
+ 			}
+ 			
+ 			
 			System.out.println(String.format("[%s] Finished!", sdf.format(System.currentTimeMillis())));
 		} catch (StardogException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (QueryEvaluationException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} 
