@@ -58,32 +58,36 @@ public class RDF2Subdue {
 			Query aQuery = aConn.query("SELECT DISTINCT ?s WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?o }");
 			TupleQueryResult aResult = aQuery.executeSelect();
 			
+			String[] schemes = {"http", "https"};
+			UrlValidator urlValidator = new UrlValidator(schemes);
+			
 			Map<Integer, Vertex> subjectsById = new HashMap<Integer, Vertex>();
 			Map<String, Vertex> subjectsByURI = new HashMap<String, Vertex>();
 			int id = 1;
 			while (aResult.hasNext()) {
 				BindingSet set = aResult.next();
 				String subjectString = set.getBinding("s").getValue().toString();
-				Query classQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", subjectString));
-				TupleQueryResult classResult = classQuery.executeSelect();
-				String subjectClass = null;
-				while (classResult.hasNext()) {
-					BindingSet classSet = classResult.next();
-					subjectClass = classSet.getBinding("class").getValue().stringValue();
+				if (urlValidator.isValid(subjectString)) {
+					Query classQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", subjectString));
+					TupleQueryResult classResult = classQuery.executeSelect();
+					String subjectClass = null;
+					while (classResult.hasNext()) {
+						BindingSet classSet = classResult.next();
+						subjectClass = classSet.getBinding("class").getValue().stringValue();
+					}
+					classResult.close();
+					Vertex vertex = new Vertex(id, subjectClass, subjectString);
+					subjectsById.put(id, vertex);
+					subjectsByURI.put(subjectString, vertex);
+					id++;
 				}
-				classResult.close();
-				Vertex vertex = new Vertex(id, subjectClass, subjectString);
-				subjectsById.put(id, vertex);
-				subjectsByURI.put(subjectString, vertex);
-				id++;
 			}
 			aResult.close();
 			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjectsById.size()));
 			
 			System.out.println(String.format("[%s] Generating nodes and edges...", sdf.format(System.currentTimeMillis())));
 			
-			String[] schemes = {"http", "https"};
-			UrlValidator urlValidator = new UrlValidator(schemes);
+			
 			
 			Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
 			Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
@@ -130,7 +134,6 @@ public class RDF2Subdue {
 				subjectsById.put(subjectVertex.getId(), subjectVertex);
 			}
 							
-			int offset = 0;
 			
 			Map<Integer, List<Vertex>> nodeMap = new HashMap<Integer, List<Vertex>>();
 			Map<Integer, Set<String>> edgeMap = new HashMap<Integer, Set<String>>();
