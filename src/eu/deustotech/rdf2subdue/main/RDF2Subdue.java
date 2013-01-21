@@ -49,14 +49,22 @@ public class RDF2Subdue {
 			String password = configFile.getProperty("STARDOG_PASS");
 			String outputFile = configFile.getProperty("GRAPH_FILE");
 			int vertexLimit = Integer.parseInt(configFile.getProperty("VERTEX_LIMIT"));
+			float graphReduction = Float.parseFloat(configFile.getProperty("GRAPH_REDUCTION"));
 			
 			System.out.println((String.format("[%s] Connecting to Stardog with URL %s and DB %s...", sdf.format(System.currentTimeMillis()), server, db)));
 			Connection aConn = ConnectionConfiguration.to(db).url(server).credentials(user, password).connect();
 			
 			System.out.println(String.format("[%s] Connected!", sdf.format(System.currentTimeMillis())));
-			System.out.println(String.format("[%s] Retrieving subjects...", sdf.format(System.currentTimeMillis())));
-			Query aQuery = aConn.query("SELECT DISTINCT ?s WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?o }");
-			TupleQueryResult aResult = aQuery.executeSelect();
+			
+			
+			System.out.println(String.format("[%s] Retrieving classes...", sdf.format(System.currentTimeMillis())));
+			Map<String, Integer> classes = new HashMap<String, Integer>();
+			Query classCountQuery = aConn.query("SELECT DISTINCT ?class (COUNT(?class) as ?count) WHERE { [] a ?class } GROUP BY ?class");
+			TupleQueryResult classCountResult = classCountQuery.executeSelect();
+			while(classCountResult.hasNext()) {
+				BindingSet classCountSet = classCountResult.next();
+				classes.put(classCountSet.getBinding("class").getValue().stringValue(), Integer.parseInt(classCountSet.getBinding("count").getValue().stringValue()));
+			}
 			
 			String[] schemes = {"http", "https"};
 			UrlValidator urlValidator = new UrlValidator(schemes);
@@ -64,31 +72,38 @@ public class RDF2Subdue {
 			Map<Integer, Vertex> subjectsById = new HashMap<Integer, Vertex>();
 			Map<String, Vertex> subjectsByURI = new HashMap<String, Vertex>();
 			int id = 1;
-			while (aResult.hasNext()) {
-				BindingSet set = aResult.next();
-				String subjectString = set.getBinding("s").getValue().toString();
-				if (urlValidator.isValid(subjectString)) {
-					Query classQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", subjectString));
-					TupleQueryResult classResult = classQuery.executeSelect();
-					String subjectClass = null;
-					while (classResult.hasNext()) {
-						BindingSet classSet = classResult.next();
-						subjectClass = classSet.getBinding("class").getValue().stringValue();
+			
+			System.out.println(String.format("[%s] Retrieving subjects...", sdf.format(System.currentTimeMillis())));
+			for (String key : classes.keySet()) {
+				Query aQuery = aConn.query(String.format("SELECT DISTINCT ?s WHERE { ?s a <%s> } LIMIT %s", key, Math.round(classes.get(key) * graphReduction)));
+				System.out.println(String.format("SELECT DISTINCT ?s WHERE { ?s a <%s> } LIMIT %s", key, Math.round(classes.get(key) * graphReduction)));
+				TupleQueryResult aResult = aQuery.executeSelect();
+
+				
+				while (aResult.hasNext()) {
+					BindingSet set = aResult.next();
+					String subjectString = set.getBinding("s").getValue().toString();
+					if (urlValidator.isValid(subjectString)) {
+						Query classQuery = aConn.query(String.format("SELECT ?class WHERE { <%s> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class } LIMIT 1", subjectString));
+						TupleQueryResult classResult = classQuery.executeSelect();
+						String subjectClass = null;
+						while (classResult.hasNext()) {
+							BindingSet classSet = classResult.next();
+							subjectClass = classSet.getBinding("class").getValue().stringValue();
+						}
+						classResult.close();
+						Vertex vertex = new Vertex(id, subjectClass, subjectString);
+						subjectsById.put(id, vertex);
+						subjectsByURI.put(subjectString, vertex);
+						id++;
 					}
-					classResult.close();
-					Vertex vertex = new Vertex(id, subjectClass, subjectString);
-					subjectsById.put(id, vertex);
-					subjectsByURI.put(subjectString, vertex);
-					id++;
 				}
+				aResult.close();
+				
 			}
-			aResult.close();
 			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjectsById.size()));
-			
 			System.out.println(String.format("[%s] Generating nodes and edges...", sdf.format(System.currentTimeMillis())));
-			
-			
-			
+
 			Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
 			Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
 			
