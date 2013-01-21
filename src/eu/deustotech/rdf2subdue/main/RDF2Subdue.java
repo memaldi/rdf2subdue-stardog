@@ -195,12 +195,13 @@ public class RDF2Subdue {
  				}
  				out.write("%\n");
  				Set<String> edgeList = edgeMap.get(key);
- 				for (String edge : edgeList) {
- 					out.write(edge);
+ 				if (edgeList != null) {
+	 				for (String edge : edgeList) {
+	 					out.write(edge);
+	 				}
  				}
  				out.close();
  			}
- 			
  			
 			System.out.println(String.format("[%s] Finished!", sdf.format(System.currentTimeMillis())));
 		} catch (StardogException e) {
