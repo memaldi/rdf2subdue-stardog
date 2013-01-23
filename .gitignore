@@ -12,4 +12,4 @@ dist/
 graphs/
 stardog-license-key.bin
 system/
-
+config.properties
