@@ -106,28 +106,29 @@ public class RDF2Subdue {
 							if (!objectsByURI.containsKey(object)) {
 								String label =  null;
 								
-								if (!urlValidator.isValid(object)) {
-									label = "Literal";
-								} else {
+								if (urlValidator.isValid(object)) {
 									label = "URI";
+									
+									objectVertex = new Vertex(id, label, object);
+									objectVertex.setProperty(property);
+									objectsByURI.put(object, objectVertex);
+									objectsById.put(id, objectVertex);
+									id++;
+									subjectVertex.addVertex(objectVertex);
 								}
-								
-								objectVertex = new Vertex(id, label, object);
-								objectVertex.setProperty(property);
-								objectsByURI.put(object, objectVertex);
-								objectsById.put(id, objectVertex);
-								id++;
 								
 							} else {
 								objectVertex = objectsByURI.get(object);
 								objectVertex.setProperty(property);
+								subjectVertex.addVertex(objectVertex);
 							}
 						} else {
 							objectVertex = subjectsByURI.get(object);
 							objectVertex.setProperty(property);
+							subjectVertex.addVertex(objectVertex);
 						}
 						
-						subjectVertex.addVertex(objectVertex);
+						
 					}
 				}
 				objectResult.close();
