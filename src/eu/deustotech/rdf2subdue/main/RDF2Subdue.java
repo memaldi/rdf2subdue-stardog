@@ -89,8 +89,8 @@ public class RDF2Subdue {
 			
 			
 			
-			Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
-			Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
+			//Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
+			//Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
 			
 			for (int i = 1; i <= subjectsById.size(); i++) {
 				Vertex subjectVertex = subjectsById.get(i);
@@ -102,27 +102,7 @@ public class RDF2Subdue {
 					String property = objectSet.getBinding("p").getValue().stringValue();
 					Vertex objectVertex = null;
 					if (!property.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {
-						if (!subjectsByURI.containsKey(object)) {
-							if (!objectsByURI.containsKey(object)) {
-								String label =  null;
-								
-								if (urlValidator.isValid(object)) {
-									label = "URI";
-									
-									objectVertex = new Vertex(id, label, object);
-									objectVertex.setProperty(property);
-									objectsByURI.put(object, objectVertex);
-									objectsById.put(id, objectVertex);
-									id++;
-									subjectVertex.addVertex(objectVertex);
-								}
-								
-							} else {
-								objectVertex = objectsByURI.get(object);
-								objectVertex.setProperty(property);
-								subjectVertex.addVertex(objectVertex);
-							}
-						} else {
+						if (subjectsByURI.containsKey(object)) {
 							objectVertex = subjectsByURI.get(object);
 							objectVertex.setProperty(property);
 							subjectVertex.addVertex(objectVertex);
@@ -171,7 +151,7 @@ public class RDF2Subdue {
 				}
 			}
  			
- 			for (int key : objectsById.keySet()) {
+ 			/*for (int key : objectsById.keySet()) {
  				Vertex objectVertex = objectsById.get(key);
  				int nodeFile = (objectVertex.getId() / vertexLimit) + 1;
  				if (!nodeMap.containsKey(nodeFile)) {
@@ -182,7 +162,7 @@ public class RDF2Subdue {
  				//nodeList.add(String.format("v %s %s\n", objectVertex.getId(), objectVertex.getLabel()));
  				nodeList.add(objectVertex);
  				nodeMap.put(nodeFile, nodeList);
- 			}
+ 			}*/
  			
  			System.out.println(String.format("[%s] Writing nodes and edges to output file(s)...", sdf.format(System.currentTimeMillis())));
 			
