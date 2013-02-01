@@ -103,9 +103,17 @@ public class RDF2Subdue {
 			}
 			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjectsById.size()));
 			System.out.println(String.format("[%s] Generating nodes and edges...", sdf.format(System.currentTimeMillis())));
+<<<<<<< HEAD
 
 			Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
 			Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
+=======
+			
+			
+			
+			//Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
+			//Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
+>>>>>>> remove_external_uris
 			
 			for (int i = 1; i <= subjectsById.size(); i++) {
 				Vertex subjectVertex = subjectsById.get(i);
@@ -117,32 +125,13 @@ public class RDF2Subdue {
 					String property = objectSet.getBinding("p").getValue().stringValue();
 					Vertex objectVertex = null;
 					if (!property.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {
-						if (!subjectsByURI.containsKey(object)) {
-							if (!objectsByURI.containsKey(object)) {
-								String label =  null;
-								
-								if (!urlValidator.isValid(object)) {
-									label = "Literal";
-								} else {
-									label = "URI";
-								}
-								
-								objectVertex = new Vertex(id, label, object);
-								objectVertex.setProperty(property);
-								objectsByURI.put(object, objectVertex);
-								objectsById.put(id, objectVertex);
-								id++;
-								
-							} else {
-								objectVertex = objectsByURI.get(object);
-								objectVertex.setProperty(property);
-							}
-						} else {
+						if (subjectsByURI.containsKey(object)) {
 							objectVertex = subjectsByURI.get(object);
 							objectVertex.setProperty(property);
+							subjectVertex.addVertex(objectVertex);
 						}
 						
-						subjectVertex.addVertex(objectVertex);
+						
 					}
 				}
 				objectResult.close();
@@ -185,7 +174,7 @@ public class RDF2Subdue {
 				}
 			}
  			
- 			for (int key : objectsById.keySet()) {
+ 			/*for (int key : objectsById.keySet()) {
  				Vertex objectVertex = objectsById.get(key);
  				int nodeFile = (objectVertex.getId() / vertexLimit) + 1;
  				if (!nodeMap.containsKey(nodeFile)) {
@@ -196,7 +185,7 @@ public class RDF2Subdue {
  				//nodeList.add(String.format("v %s %s\n", objectVertex.getId(), objectVertex.getLabel()));
  				nodeList.add(objectVertex);
  				nodeMap.put(nodeFile, nodeList);
- 			}
+ 			}*/
  			
  			System.out.println(String.format("[%s] Writing nodes and edges to output file(s)...", sdf.format(System.currentTimeMillis())));
 			
