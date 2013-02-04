@@ -166,22 +166,8 @@ public class RDF2Subdue {
 				}
 			}
  			
- 			/*for (int key : objectsById.keySet()) {
- 				Vertex objectVertex = objectsById.get(key);
- 				int nodeFile = (objectVertex.getId() / vertexLimit) + 1;
- 				if (!nodeMap.containsKey(nodeFile)) {
- 					nodeMap.put(nodeFile, new ArrayList<Vertex>());
- 				}
- 				
- 				List<Vertex> nodeList = nodeMap.get(nodeFile);
- 				//nodeList.add(String.format("v %s %s\n", objectVertex.getId(), objectVertex.getLabel()));
- 				nodeList.add(objectVertex);
- 				nodeMap.put(nodeFile, nodeList);
- 			}*/
- 			
  			System.out.println(String.format("[%s] Writing nodes and edges to output file(s)...", sdf.format(System.currentTimeMillis())));
 			
- 			
  			for (int key : nodeMap.keySet()) {
  				FileWriter out = new FileWriter(String.format("%s_%s.g", outputFile, key));
  				List<Vertex> nodeList = nodeMap.get(key);
