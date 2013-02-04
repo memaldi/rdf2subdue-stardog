@@ -102,19 +102,11 @@ public class RDF2Subdue {
 				
 			}
 			System.out.println(String.format("[%s] %s subjects found!", sdf.format(System.currentTimeMillis()), subjectsById.size()));
-			System.out.println(String.format("[%s] Generating nodes and edges...", sdf.format(System.currentTimeMillis())));
-<<<<<<< HEAD
-
-			Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
-			Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
-=======
-			
-			
-			
+			System.out.println(String.format("[%s] Generating nodes and edges...", sdf.format(System.currentTimeMillis())));		
+						
 			//Map<String, Vertex> objectsByURI = new HashMap<String, Vertex>();
 			//Map<Integer, Vertex> objectsById = new HashMap<Integer, Vertex>();
->>>>>>> remove_external_uris
-			
+
 			for (int i = 1; i <= subjectsById.size(); i++) {
 				Vertex subjectVertex = subjectsById.get(i);
 				Query objectQuery = aConn.query(String.format("SELECT ?o ?p WHERE { <%s> ?p ?o }", subjectVertex.getUri()));
